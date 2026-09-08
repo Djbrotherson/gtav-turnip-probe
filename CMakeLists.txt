@@ -9,6 +9,10 @@ add_subdirectory(deps/libadrenotools)
 # Pin ByteHook to v1.0.10 in CI. Newer releases add a ShadowHook dependency.
 add_subdirectory(deps/bhook/bytehook/src/main/cpp bytehook_build)
 
+# ByteHook exports its C-only -std=c17 option to consumers.
+# driverhook/probe are C++, so do not inherit ByteHook's compile options.
+set_property(TARGET bytehook PROPERTY INTERFACE_COMPILE_OPTIONS "")
+
 add_library(driverhook SHARED driverhook.cpp probe.cpp)
 target_include_directories(driverhook PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 
