@@ -24,6 +24,7 @@ public class MainActivity extends Activity {
     private TextView output;
     private Button stage2;
     private Button stage3;
+    private Button stage4;
 
     @Override
     protected void onCreate(Bundle state) {
@@ -36,7 +37,7 @@ public class MainActivity extends Activity {
         root.setPadding(p, p, p, p);
 
         TextView title = new TextView(this);
-        title.setText("GTAV Turnip Probe - Test 7");
+        title.setText("GTAV Turnip Probe - Test 8");
         title.setTextSize(21);
         title.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
 
@@ -51,16 +52,22 @@ public class MainActivity extends Activity {
         stage3.setText("3. VERIFY META + DRIVER LIB");
         stage3.setEnabled(false);
 
+        stage4 = new Button(this);
+        stage4.setText("4. LOAD DRIVERHOOK.SO ONLY");
+        stage4.setEnabled(false);
+
         output = new TextView(this);
         output.setTypeface(Typeface.MONOSPACE);
         output.setTextSize(13);
         output.setTextIsSelectable(true);
         output.setText(
-                "TEST 7\n\n"
-              + "No JNI.\n"
-              + "No AdrenoTools.\n"
-              + "No Turnip loading.\n\n"
-              + "This test only reads and extracts the bundled T28 ZIP."
+                "TEST 8\n\n"
+              + "Stages 1-3 repeat the proven Java path.\n\n"
+              + "Stage 4 ONLY calls:\n"
+              + "System.loadLibrary(\"driverhook\")\n\n"
+              + "No nativeInit.\n"
+              + "No Turnip loading.\n"
+              + "No Vulkan calls."
         );
 
         stage1.setOnClickListener(v -> {
@@ -115,8 +122,39 @@ public class MainActivity extends Activity {
             new Thread(() -> {
                 String result = verifyDriver();
 
-                runOnUiThread(() -> output.setText(result));
+                runOnUiThread(() -> {
+                    output.setText(result);
+
+                    if (result.startsWith("STAGE 3 PASSED")) {
+                        stage4.setEnabled(true);
+                    }
+                });
             }).start();
+        });
+
+        stage4.setOnClickListener(v -> {
+            output.setText(
+                    "ENTERING SYSTEM.LOADLIBRARY...\n\n"
+                  + "Loading libdriverhook.so only.\n"
+                  + "No JNI function will be called."
+            );
+
+            try {
+                System.loadLibrary("driverhook");
+
+                output.setText(
+                        "STAGE 4 PASSED\n\n"
+                      + "libdriverhook.so loaded successfully.\n\n"
+                      + "This proves Android can load the complete native shim "
+                      + "and its shared-library dependencies.\n\n"
+                      + "No nativeInit was called.\n"
+                      + "No Turnip driver was loaded.\n"
+                      + "No Vulkan API was touched."
+                );
+
+            } catch (Throwable t) {
+                output.setText(formatError("STAGE 4 JAVA/NATIVE LOAD ERROR", t));
+            }
         });
 
         ScrollView scroll = new ScrollView(this);
@@ -126,6 +164,7 @@ public class MainActivity extends Activity {
         root.addView(stage1);
         root.addView(stage2);
         root.addView(stage3);
+        root.addView(stage4);
 
         root.addView(
                 scroll,
@@ -160,7 +199,6 @@ public class MainActivity extends Activity {
                     if (e.isDirectory()) continue;
 
                     String name = new File(e.getName()).getName();
-
                     if (name.isEmpty()) continue;
 
                     File outFile = new File(dir, name);
@@ -181,10 +219,8 @@ public class MainActivity extends Activity {
 
             return "STAGE 2 PASSED\n\n"
                     + "Extracted files: " + files + "\n"
-                    + "Extracted bytes: " + bytes + "\n"
-                    + "Directory:\n" + dir.getAbsolutePath() + "\n\n"
-                    + "No native code loaded.\n\n"
-                    + "Press Stage 3.";
+                    + "Extracted bytes: " + bytes + "\n\n"
+                    + "No native code loaded.";
 
         } catch (Throwable t) {
             return formatError("STAGE 2 FAILED", t);
@@ -212,8 +248,8 @@ public class MainActivity extends Activity {
                 return "STAGE 3 FAILED\n\n"
                         + "Driver: " + name + "\n"
                         + "Version: " + version + "\n"
-                        + "libraryName: " + libraryName + "\n\n"
-                        + "Declared library was not extracted.";
+                        + "Library: " + libraryName + "\n\n"
+                        + "Declared library not found.";
             }
 
             return "STAGE 3 PASSED\n\n"
@@ -221,8 +257,8 @@ public class MainActivity extends Activity {
                     + "Version: " + version + "\n"
                     + "Library: " + libraryName + "\n"
                     + "Library bytes: " + lib.length() + "\n\n"
-                    + "ZIP extraction + metadata handling are good.\n"
-                    + "Still no JNI or Turnip loading.";
+                    + "Java-side handling is good.\n\n"
+                    + "Press Stage 4.";
 
         } catch (Throwable t) {
             return formatError("STAGE 3 FAILED", t);
@@ -259,6 +295,7 @@ public class MainActivity extends Activity {
 
     private static String formatError(String title, Throwable t) {
         StringBuilder s = new StringBuilder();
+
         s.append(title).append("\n\n");
         s.append(t.toString());
 
