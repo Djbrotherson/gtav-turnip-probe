@@ -16,10 +16,6 @@ import java.util.zip.ZipInputStream;
 
 public final class DriverBootstrap {
 
-    static {
-        System.loadLibrary("driverhook");
-    }
-
     private static File stagedDir;
     private static String stagedLibrary;
     private static String stagedName;
@@ -89,6 +85,10 @@ public final class DriverBootstrap {
         }
 
         try {
+            // IMPORTANT: native code is loaded only here.
+            // Stage 1 remains 100% Java and cannot enter AdrenoTools/ByteHook.
+            System.loadLibrary("driverhook");
+
             boolean ok = nativeInit(
                     context.getApplicationInfo().nativeLibraryDir,
                     stagedDir.getAbsolutePath() + "/",
