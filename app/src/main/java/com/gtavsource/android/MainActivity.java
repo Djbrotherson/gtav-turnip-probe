@@ -1,19 +1,19 @@
 package com.gtavsource.android;
 
 import android.app.Activity;
-import android.graphics.Typeface;
 import android.os.Bundle;
+import android.graphics.Typeface;
 import android.widget.Button;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 
+import java.io.InputStream;
+
 public class MainActivity extends Activity {
 
     private TextView output;
-    private Button stage2;
-    private Button stage3;
-    private Button stage4;
+    private Button assetButton;
 
     @Override
     protected void onCreate(Bundle state) {
@@ -22,65 +22,90 @@ public class MainActivity extends Activity {
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
 
-        int p = dp(12);
+        int p = dp(14);
         root.setPadding(p, p, p, p);
 
         TextView title = new TextView(this);
-        title.setText("GTAV Turnip Probe - Test 5");
+        title.setText("GTAV Turnip Probe - Test 6");
         title.setTextSize(21);
         title.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
 
-        Button stage1 = new Button(this);
-        stage1.setText("1. VERIFY BUNDLED T28");
+        Button uiButton = new Button(this);
+        uiButton.setText("1. UI-ONLY TEST");
 
-        stage2 = new Button(this);
-        stage2.setText("2. EXTRACT + VALIDATE T28");
-        stage2.setEnabled(false);
-
-        stage3 = new Button(this);
-        stage3.setText("3. LOAD TURNIP");
-        stage3.setEnabled(false);
-
-        stage4 = new Button(this);
-        stage4.setText("4. RUN CAPABILITY PROBE");
-        stage4.setEnabled(false);
+        assetButton = new Button(this);
+        assetButton.setText("2. READ 16 BYTES FROM T28");
+        assetButton.setEnabled(false);
 
         output = new TextView(this);
         output.setTypeface(Typeface.MONOSPACE);
-        output.setTextSize(13);
+        output.setTextSize(14);
         output.setTextIsSelectable(true);
         output.setText(
-                "T28 toasted is bundled inside this APK.\n\n"
-              + "No file picker.\n"
-              + "No external storage.\n"
-              + "No native code until Stage 3.\n\n"
-              + "Press Stage 1."
+                "TEST 6\n\n"
+              + "Button 1 does absolutely nothing except change this text.\n\n"
+              + "No DriverBootstrap.\n"
+              + "No JNI.\n"
+              + "No Turnip.\n"
+              + "No ZIP parsing."
         );
 
-        stage1.setOnClickListener(v -> runAsync(() ->
-                DriverBootstrap.verifyAsset(this),
-                2));
+        uiButton.setOnClickListener(v -> {
+            output.setText(
+                    "STAGE 1 PASSED\n\n"
+                  + "The Activity and button handler are stable.\n\n"
+                  + "No file was opened.\n"
+                  + "No native code was touched.\n\n"
+                  + "You may now press button 2."
+            );
 
-        stage2.setOnClickListener(v -> runAsync(() ->
-                DriverBootstrap.extractDriver(this),
-                3));
+            assetButton.setEnabled(true);
+        });
 
-        stage3.setOnClickListener(v -> runAsync(() ->
-                DriverBootstrap.loadTurnip(this),
-                4));
+        assetButton.setOnClickListener(v -> {
+            try {
+                byte[] b = new byte[16];
+                int n;
 
-        stage4.setOnClickListener(v -> runAsync(
-                DriverBootstrap::runCapabilityProbe,
-                0));
+                try (InputStream in =
+                             getAssets().open("driver.zip")) {
+                    n = in.read(b);
+                }
+
+                StringBuilder hex = new StringBuilder();
+
+                for (int i = 0; i < n; i++) {
+                    hex.append(String.format("%02x ", b[i]));
+                }
+
+                output.setText(
+                        "STAGE 2 PASSED\n\n"
+                      + "Bundled driver.zip opened successfully.\n"
+                      + "Bytes read: " + n + "\n\n"
+                      + "First bytes:\n"
+                      + hex.toString()
+                );
+
+            } catch (Throwable t) {
+                StringBuilder s = new StringBuilder();
+
+                s.append("STAGE 2 JAVA ERROR\n\n");
+                s.append(t.toString());
+
+                for (StackTraceElement e : t.getStackTrace()) {
+                    s.append("\n  at ").append(e);
+                }
+
+                output.setText(s.toString());
+            }
+        });
 
         ScrollView scroll = new ScrollView(this);
         scroll.addView(output);
 
         root.addView(title);
-        root.addView(stage1);
-        root.addView(stage2);
-        root.addView(stage3);
-        root.addView(stage4);
+        root.addView(uiButton);
+        root.addView(assetButton);
 
         root.addView(
                 scroll,
@@ -92,28 +117,6 @@ public class MainActivity extends Activity {
         );
 
         setContentView(root);
-    }
-
-    private interface Work {
-        String run();
-    }
-
-    private void runAsync(Work work, int nextStage) {
-        output.setText("Working...\n");
-
-        new Thread(() -> {
-            String result = work.run();
-
-            runOnUiThread(() -> {
-                output.setText(result);
-
-                if (result.contains("PASSED")) {
-                    if (nextStage == 2) stage2.setEnabled(true);
-                    if (nextStage == 3) stage3.setEnabled(true);
-                    if (nextStage == 4) stage4.setEnabled(true);
-                }
-            });
-        }).start();
     }
 
     private int dp(int n) {
