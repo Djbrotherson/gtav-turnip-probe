@@ -44,7 +44,7 @@ void *hooked_dlopen(const char *name, int flags) {
         LOGI("intercepted dlopen(\"%s\") -> turnip handle %p", name, g_vulkan);
         return g_vulkan;
     }
-    return BYTEHOOK_CALL_PREV(hooked_dlopen, void *(*)(const char *, int), name, flags);
+    return BYTEHOOK_CALL_PREV(hooked_dlopen, name, flags);
 }
 
 void *hooked_android_dlopen_ext(const char *name, int flags, const void *info) {
@@ -54,7 +54,6 @@ void *hooked_android_dlopen_ext(const char *name, int flags, const void *info) {
         return g_vulkan;
     }
     return BYTEHOOK_CALL_PREV(hooked_android_dlopen_ext,
-                              void *(*)(const char *, int, const void *),
                               name, flags, info);
 }
 
@@ -66,7 +65,7 @@ int hooked_dlclose(void *handle) {
         LOGI("swallowed dlclose on turnip handle");
         return 0;
     }
-    return BYTEHOOK_CALL_PREV(hooked_dlclose, int (*)(void *), handle);
+    return BYTEHOOK_CALL_PREV(hooked_dlclose, handle);
 }
 
 void install_hooks() {
