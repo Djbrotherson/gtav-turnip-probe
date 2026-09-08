@@ -1,7 +1,6 @@
 package com.gtavsource.android;
 
 import android.content.Context;
-import android.net.Uri;
 
 import org.json.JSONObject;
 
@@ -17,64 +16,51 @@ import java.util.zip.ZipInputStream;
 
 public final class DriverBootstrap {
 
-    private static File copiedZip;
     private static File stagedDir;
     private static String stagedLibrary;
     private static String stagedName;
     private static String stagedVersion;
+    private static boolean turnipLoaded = false;
 
     private DriverBootstrap() {}
 
-    public static String copyZip(Context context, Uri uri) {
+    public static String verifyAsset(Context context) {
         try {
-            File dir = new File(context.getFilesDir(), "incoming");
-            if (!dir.exists() && !dir.mkdirs()) {
-                return "COPY FAILED\nCould not create incoming directory.";
-            }
+            long total = 0;
+            MessageDigest md = MessageDigest.getInstance("SHA-256");
 
-            copiedZip = new File(dir, "driver.zip");
-
-            try (InputStream in =
-                         context.getContentResolver().openInputStream(uri);
-                 OutputStream out =
-                         new FileOutputStream(copiedZip)) {
-
-                if (in == null)
-                    return "COPY FAILED\nContentResolver returned null.";
-
+            try (InputStream in = context.getAssets().open("driver.zip")) {
                 byte[] buf = new byte[65536];
                 int n;
-                long total = 0;
 
                 while ((n = in.read(buf)) > 0) {
-                    out.write(buf, 0, n);
                     total += n;
+                    md.update(buf, 0, n);
                 }
-
-                return "STAGE 2 PASSED\n\n"
-                        + "Copied driver.zip internally.\n"
-                        + "Bytes: " + total + "\n"
-                        + "SHA256: " + sha256(copiedZip) + "\n\n"
-                        + "Press 3. INSPECT DRIVER ZIP.";
             }
 
+            return "STAGE 1 PASSED\n\n"
+                    + "Bundled T28 driver.zip opened successfully.\n"
+                    + "Bytes: " + total + "\n"
+                    + "SHA256: " + hex(md.digest()) + "\n\n"
+                    + "No native code has been loaded.\n\n"
+                    + "Press 2. EXTRACT + VALIDATE T28.";
+
         } catch (Throwable t) {
-            return throwable("COPY FAILED", t);
+            return throwable("STAGE 1 FAILED", t);
         }
     }
 
-    public static String inspectZip(Context context) {
-        if (copiedZip == null || !copiedZip.exists())
-            return "NO INTERNAL ZIP\nRun Stage 2 first.";
-
+    public static String extractDriver(Context context) {
         try {
-            File driverDir = new File(context.getFilesDir(), "driver");
-            deleteDir(driverDir);
+            File dir = new File(context.getFilesDir(), "driver");
+            deleteDir(dir);
 
-            if (!driverDir.mkdirs() && !driverDir.isDirectory())
-                return "INSPECT FAILED\nCould not create driver directory.";
+            if (!dir.mkdirs() && !dir.isDirectory()) {
+                return "STAGE 2 FAILED\nCould not create private driver directory.";
+            }
 
-            try (InputStream raw = new FileInputStream(copiedZip);
+            try (InputStream raw = context.getAssets().open("driver.zip");
                  ZipInputStream zin = new ZipInputStream(raw)) {
 
                 ZipEntry e;
@@ -85,58 +71,59 @@ public final class DriverBootstrap {
                     String name = new File(e.getName()).getName();
                     if (name.isEmpty()) continue;
 
-                    File outFile = new File(driverDir, name);
+                    File outFile = new File(dir, name);
 
                     try (OutputStream out = new FileOutputStream(outFile)) {
                         byte[] buf = new byte[65536];
                         int n;
 
-                        while ((n = zin.read(buf)) > 0)
+                        while ((n = zin.read(buf)) > 0) {
                             out.write(buf, 0, n);
+                        }
                     }
                 }
             }
 
-            File meta = new File(driverDir, "meta.json");
+            File meta = new File(dir, "meta.json");
 
-            if (!meta.exists())
-                return "INSPECT FAILED\nNo meta.json found.";
+            if (!meta.exists()) {
+                return "STAGE 2 FAILED\nmeta.json was not extracted.";
+            }
 
             JSONObject j = new JSONObject(readAll(meta));
 
-            String libName = j.getString("libraryName");
-            String name = j.optString("name", "?");
-            String version = j.optString("driverVersion", "?");
+            stagedLibrary = j.getString("libraryName");
+            stagedName = j.optString("name", "?");
+            stagedVersion = j.optString("driverVersion", "?");
+            stagedDir = dir;
 
-            File lib = new File(driverDir, libName);
+            File lib = new File(dir, stagedLibrary);
 
             if (!lib.exists()) {
-                return "INSPECT FAILED\n\n"
-                        + "meta.json libraryName:\n"
-                        + libName
-                        + "\n\nLibrary not found after extraction.";
+                return "STAGE 2 FAILED\n\n"
+                        + "meta.json requests:\n"
+                        + stagedLibrary
+                        + "\n\nbut that library was not extracted.";
             }
 
-            stagedDir = driverDir;
-            stagedLibrary = libName;
-            stagedName = name;
-            stagedVersion = version;
-
-            return "STAGE 3 PASSED\n\n"
-                    + "Driver: " + name + "\n"
-                    + "Version: " + version + "\n"
-                    + "Library: " + libName + "\n"
+            return "STAGE 2 PASSED\n\n"
+                    + "Driver: " + stagedName + "\n"
+                    + "Version: " + stagedVersion + "\n"
+                    + "Library: " + stagedLibrary + "\n"
                     + "Library bytes: " + lib.length() + "\n\n"
-                    + "Press 4. LOAD TURNIP + RUN PROBE.";
+                    + "Expected T28 library: vulkan.purple.so\n\n"
+                    + "Still no native code loaded.\n\n"
+                    + "Press 3. LOAD TURNIP.";
 
         } catch (Throwable t) {
-            return throwable("INSPECT FAILED", t);
+            return throwable("STAGE 2 FAILED", t);
         }
     }
 
-    public static String runProbe(Context context) {
-        if (stagedDir == null || stagedLibrary == null)
-            return "NO DRIVER STAGED\nRun Stage 3 first.";
+    public static String loadTurnip(Context context) {
+        if (stagedDir == null || stagedLibrary == null) {
+            return "STAGE 3 FAILED\nRun Stage 2 first.";
+        }
 
         try {
             System.loadLibrary("driverhook");
@@ -149,37 +136,37 @@ public final class DriverBootstrap {
             );
 
             if (!ok) {
-                return "NATIVE INIT RETURNED FALSE\n\n"
-                        + stagedName + "\n"
-                        + stagedVersion + "\n"
-                        + stagedLibrary;
+                return "STAGE 3 FAILED\n\n"
+                        + "nativeInit returned false.\n\n"
+                        + "Driver: " + stagedName + "\n"
+                        + "Version: " + stagedVersion + "\n"
+                        + "Library: " + stagedLibrary;
             }
 
-            return "STAGE 4: TURNIP ACTIVE\n\n"
-                    + nativeProbe();
+            turnipLoaded = true;
+
+            return "STAGE 3 PASSED\n\n"
+                    + "CUSTOM TURNIP LOADER INITIALIZED\n\n"
+                    + "Driver: " + stagedName + "\n"
+                    + "Version: " + stagedVersion + "\n"
+                    + "Library: " + stagedLibrary + "\n\n"
+                    + "Press 4. RUN VULKAN CAPABILITY PROBE.";
 
         } catch (Throwable t) {
-            return throwable("NATIVE PROBE FAILED", t);
+            return throwable("STAGE 3 FAILED", t);
         }
     }
 
-    private static String sha256(File f) throws Exception {
-        MessageDigest md = MessageDigest.getInstance("SHA-256");
-
-        try (InputStream in = new FileInputStream(f)) {
-            byte[] buf = new byte[65536];
-            int n;
-
-            while ((n = in.read(buf)) > 0)
-                md.update(buf, 0, n);
+    public static String runCapabilityProbe() {
+        if (!turnipLoaded) {
+            return "STAGE 4 FAILED\nTurnip has not been loaded.";
         }
 
-        StringBuilder s = new StringBuilder();
-
-        for (byte b : md.digest())
-            s.append(String.format("%02x", b));
-
-        return s.toString();
+        try {
+            return "STAGE 4 RESULT\n\n" + nativeProbe();
+        } catch (Throwable t) {
+            return throwable("STAGE 4 FAILED", t);
+        }
     }
 
     private static String readAll(File f) throws Exception {
@@ -188,11 +175,22 @@ public final class DriverBootstrap {
             byte[] buf = new byte[8192];
             int n;
 
-            while ((n = in.read(buf)) > 0)
+            while ((n = in.read(buf)) > 0) {
                 out.write(buf, 0, n);
+            }
 
             return out.toString("UTF-8");
         }
+    }
+
+    private static String hex(byte[] data) {
+        StringBuilder s = new StringBuilder();
+
+        for (byte b : data) {
+            s.append(String.format("%02x", b));
+        }
+
+        return s.toString();
     }
 
     private static String throwable(String title, Throwable t) {
@@ -201,8 +199,9 @@ public final class DriverBootstrap {
         s.append(title).append("\n\n");
         s.append(t.toString());
 
-        for (StackTraceElement e : t.getStackTrace())
+        for (StackTraceElement e : t.getStackTrace()) {
             s.append("\n  at ").append(e);
+        }
 
         return s.toString();
     }
@@ -212,9 +211,11 @@ public final class DriverBootstrap {
 
         File[] children = f.listFiles();
 
-        if (children != null)
-            for (File c : children)
+        if (children != null) {
+            for (File c : children) {
                 deleteDir(c);
+            }
+        }
 
         f.delete();
     }
