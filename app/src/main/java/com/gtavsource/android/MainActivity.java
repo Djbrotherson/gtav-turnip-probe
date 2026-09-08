@@ -1,19 +1,29 @@
 package com.gtavsource.android;
 
 import android.app.Activity;
-import android.os.Bundle;
 import android.graphics.Typeface;
+import android.os.Bundle;
 import android.widget.Button;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 
+import org.json.JSONObject;
+
+import java.io.ByteArrayOutputStream;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
 import java.io.InputStream;
+import java.io.OutputStream;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipInputStream;
 
 public class MainActivity extends Activity {
 
     private TextView output;
-    private Button assetButton;
+    private Button stage2;
+    private Button stage3;
 
     @Override
     protected void onCreate(Bundle state) {
@@ -26,49 +36,39 @@ public class MainActivity extends Activity {
         root.setPadding(p, p, p, p);
 
         TextView title = new TextView(this);
-        title.setText("GTAV Turnip Probe - Test 6");
+        title.setText("GTAV Turnip Probe - Test 7");
         title.setTextSize(21);
         title.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
 
-        Button uiButton = new Button(this);
-        uiButton.setText("1. UI-ONLY TEST");
+        Button stage1 = new Button(this);
+        stage1.setText("1. READ 16 BYTES FROM T28");
 
-        assetButton = new Button(this);
-        assetButton.setText("2. READ 16 BYTES FROM T28");
-        assetButton.setEnabled(false);
+        stage2 = new Button(this);
+        stage2.setText("2. EXTRACT T28");
+        stage2.setEnabled(false);
+
+        stage3 = new Button(this);
+        stage3.setText("3. VERIFY META + DRIVER LIB");
+        stage3.setEnabled(false);
 
         output = new TextView(this);
         output.setTypeface(Typeface.MONOSPACE);
-        output.setTextSize(14);
+        output.setTextSize(13);
         output.setTextIsSelectable(true);
         output.setText(
-                "TEST 6\n\n"
-              + "Button 1 does absolutely nothing except change this text.\n\n"
-              + "No DriverBootstrap.\n"
+                "TEST 7\n\n"
               + "No JNI.\n"
-              + "No Turnip.\n"
-              + "No ZIP parsing."
+              + "No AdrenoTools.\n"
+              + "No Turnip loading.\n\n"
+              + "This test only reads and extracts the bundled T28 ZIP."
         );
 
-        uiButton.setOnClickListener(v -> {
-            output.setText(
-                    "STAGE 1 PASSED\n\n"
-                  + "The Activity and button handler are stable.\n\n"
-                  + "No file was opened.\n"
-                  + "No native code was touched.\n\n"
-                  + "You may now press button 2."
-            );
-
-            assetButton.setEnabled(true);
-        });
-
-        assetButton.setOnClickListener(v -> {
+        stage1.setOnClickListener(v -> {
             try {
                 byte[] b = new byte[16];
                 int n;
 
-                try (InputStream in =
-                             getAssets().open("driver.zip")) {
+                try (InputStream in = getAssets().open("driver.zip")) {
                     n = in.read(b);
                 }
 
@@ -79,33 +79,53 @@ public class MainActivity extends Activity {
                 }
 
                 output.setText(
-                        "STAGE 2 PASSED\n\n"
+                        "STAGE 1 PASSED\n\n"
                       + "Bundled driver.zip opened successfully.\n"
                       + "Bytes read: " + n + "\n\n"
                       + "First bytes:\n"
-                      + hex.toString()
+                      + hex
                 );
 
+                stage2.setEnabled(true);
+
             } catch (Throwable t) {
-                StringBuilder s = new StringBuilder();
-
-                s.append("STAGE 2 JAVA ERROR\n\n");
-                s.append(t.toString());
-
-                for (StackTraceElement e : t.getStackTrace()) {
-                    s.append("\n  at ").append(e);
-                }
-
-                output.setText(s.toString());
+                output.setText(formatError("STAGE 1 FAILED", t));
             }
+        });
+
+        stage2.setOnClickListener(v -> {
+            output.setText("Extracting T28...\n");
+
+            new Thread(() -> {
+                String result = extractDriver();
+
+                runOnUiThread(() -> {
+                    output.setText(result);
+
+                    if (result.startsWith("STAGE 2 PASSED")) {
+                        stage3.setEnabled(true);
+                    }
+                });
+            }).start();
+        });
+
+        stage3.setOnClickListener(v -> {
+            output.setText("Verifying metadata and driver library...\n");
+
+            new Thread(() -> {
+                String result = verifyDriver();
+
+                runOnUiThread(() -> output.setText(result));
+            }).start();
         });
 
         ScrollView scroll = new ScrollView(this);
         scroll.addView(output);
 
         root.addView(title);
-        root.addView(uiButton);
-        root.addView(assetButton);
+        root.addView(stage1);
+        root.addView(stage2);
+        root.addView(stage3);
 
         root.addView(
                 scroll,
@@ -117,6 +137,136 @@ public class MainActivity extends Activity {
         );
 
         setContentView(root);
+    }
+
+    private String extractDriver() {
+        try {
+            File dir = new File(getFilesDir(), "driver");
+            deleteDir(dir);
+
+            if (!dir.mkdirs() && !dir.isDirectory()) {
+                return "STAGE 2 FAILED\nCould not create driver directory.";
+            }
+
+            int files = 0;
+            long bytes = 0;
+
+            try (InputStream raw = getAssets().open("driver.zip");
+                 ZipInputStream zin = new ZipInputStream(raw)) {
+
+                ZipEntry e;
+
+                while ((e = zin.getNextEntry()) != null) {
+                    if (e.isDirectory()) continue;
+
+                    String name = new File(e.getName()).getName();
+
+                    if (name.isEmpty()) continue;
+
+                    File outFile = new File(dir, name);
+
+                    try (OutputStream out = new FileOutputStream(outFile)) {
+                        byte[] buf = new byte[65536];
+                        int n;
+
+                        while ((n = zin.read(buf)) > 0) {
+                            out.write(buf, 0, n);
+                            bytes += n;
+                        }
+                    }
+
+                    files++;
+                }
+            }
+
+            return "STAGE 2 PASSED\n\n"
+                    + "Extracted files: " + files + "\n"
+                    + "Extracted bytes: " + bytes + "\n"
+                    + "Directory:\n" + dir.getAbsolutePath() + "\n\n"
+                    + "No native code loaded.\n\n"
+                    + "Press Stage 3.";
+
+        } catch (Throwable t) {
+            return formatError("STAGE 2 FAILED", t);
+        }
+    }
+
+    private String verifyDriver() {
+        try {
+            File dir = new File(getFilesDir(), "driver");
+            File meta = new File(dir, "meta.json");
+
+            if (!meta.exists()) {
+                return "STAGE 3 FAILED\nmeta.json not found.";
+            }
+
+            JSONObject j = new JSONObject(readAll(meta));
+
+            String libraryName = j.getString("libraryName");
+            String name = j.optString("name", "?");
+            String version = j.optString("driverVersion", "?");
+
+            File lib = new File(dir, libraryName);
+
+            if (!lib.exists()) {
+                return "STAGE 3 FAILED\n\n"
+                        + "Driver: " + name + "\n"
+                        + "Version: " + version + "\n"
+                        + "libraryName: " + libraryName + "\n\n"
+                        + "Declared library was not extracted.";
+            }
+
+            return "STAGE 3 PASSED\n\n"
+                    + "Driver: " + name + "\n"
+                    + "Version: " + version + "\n"
+                    + "Library: " + libraryName + "\n"
+                    + "Library bytes: " + lib.length() + "\n\n"
+                    + "ZIP extraction + metadata handling are good.\n"
+                    + "Still no JNI or Turnip loading.";
+
+        } catch (Throwable t) {
+            return formatError("STAGE 3 FAILED", t);
+        }
+    }
+
+    private static String readAll(File f) throws Exception {
+        try (InputStream in = new FileInputStream(f)) {
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            byte[] buf = new byte[8192];
+            int n;
+
+            while ((n = in.read(buf)) > 0) {
+                out.write(buf, 0, n);
+            }
+
+            return out.toString("UTF-8");
+        }
+    }
+
+    private static void deleteDir(File f) {
+        if (f == null || !f.exists()) return;
+
+        File[] children = f.listFiles();
+
+        if (children != null) {
+            for (File c : children) {
+                deleteDir(c);
+            }
+        }
+
+        f.delete();
+    }
+
+    private static String formatError(String title, Throwable t) {
+        StringBuilder s = new StringBuilder();
+        s.append(title).append("\n\n");
+        s.append(t.toString());
+
+        for (StackTraceElement e : t.getStackTrace()) {
+            s.append("\n  at ").append(e);
+        }
+
+        return s.toString();
     }
 
     private int dp(int n) {
