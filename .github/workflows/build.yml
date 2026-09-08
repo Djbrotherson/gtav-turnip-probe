@@ -36,6 +36,11 @@ jobs:
           git clone --depth 1 --recursive https://github.com/bylaws/libadrenotools.git deps/libadrenotools
           git clone --depth 1 --branch v1.0.10 https://github.com/bytedance/bhook.git deps/bhook
 
+          # ByteHook v1.0.10 enables -Weverything -Werror itself.
+          # Current NDK/Clang emits compatibility warnings that become fatal.
+          sed -i 's/-Weverything -Werror/-Weverything/' \
+            deps/bhook/bytehook/src/main/cpp/CMakeLists.txt
+
       - name: Configure
         shell: bash
         run: |
