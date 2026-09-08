@@ -20,32 +20,34 @@ public final class DriverBootstrap {
         System.loadLibrary("driverhook");
     }
 
+    private static File stagedDir;
+    private static String stagedLibrary;
+    private static String stagedName;
+    private static String stagedVersion;
+
     private DriverBootstrap() {}
 
-    public static String runProbe(Context context, Uri driverPackage) {
+    public static String stageDriver(Context context, Uri driverPackage) {
         try {
             File driverDir = new File(context.getFilesDir(), "driver");
-
             deleteDir(driverDir);
 
             if (!driverDir.mkdirs() && !driverDir.isDirectory()) {
-                return "ERROR\nCould not create internal driver directory.";
+                return "STAGE FAILED\nCould not create driver directory.";
             }
 
             try (InputStream in =
                          context.getContentResolver().openInputStream(driverPackage)) {
-
                 if (in == null) {
-                    return "ERROR\nCould not open selected driver package.";
+                    return "STAGE FAILED\nCould not open selected ZIP.";
                 }
-
                 unzip(in, driverDir);
             }
 
             File meta = new File(driverDir, "meta.json");
 
             if (!meta.exists()) {
-                return "ERROR\nSelected ZIP does not contain meta.json.";
+                return "STAGE FAILED\nNo meta.json found in selected ZIP.";
             }
 
             JSONObject j = new JSONObject(readAll(meta));
@@ -57,49 +59,73 @@ public final class DriverBootstrap {
             File driver = new File(driverDir, libraryName);
 
             if (!driver.exists()) {
-                return "ERROR\nmeta.json specifies:\n"
+                return "STAGE FAILED\n\n"
+                        + "meta.json says:\n"
                         + libraryName
-                        + "\n\nbut that library was not found in the ZIP.";
+                        + "\n\nbut that library is not present.";
             }
 
-            String nativeDir =
-                    context.getApplicationInfo().nativeLibraryDir;
+            stagedDir = driverDir;
+            stagedLibrary = libraryName;
+            stagedName = name;
+            stagedVersion = version;
 
+            return "STAGE 1 PASSED\n\n"
+                    + "Driver: " + name + "\n"
+                    + "Version: " + version + "\n"
+                    + "Library: " + libraryName + "\n"
+                    + "Size: " + driver.length() + " bytes\n\n"
+                    + "ZIP extraction and meta.json are good.\n\n"
+                    + "Press LOAD TURNIP + RUN PROBE.";
+
+        } catch (Throwable t) {
+            return throwable("STAGE FAILED", t);
+        }
+    }
+
+    public static String runProbe(Context context) {
+        if (stagedDir == null || stagedLibrary == null) {
+            return "NO DRIVER STAGED";
+        }
+
+        try {
             boolean ok = nativeInit(
-                    nativeDir,
-                    driverDir.getAbsolutePath() + "/",
-                    libraryName,
+                    context.getApplicationInfo().nativeLibraryDir,
+                    stagedDir.getAbsolutePath() + "/",
+                    stagedLibrary,
                     context.getCacheDir().getAbsolutePath()
             );
 
             if (!ok) {
-                return "TURNIP LOAD FAILED\n\n"
-                        + "Driver: " + name + "\n"
-                        + "Version: " + version + "\n"
-                        + "Library: " + libraryName + "\n\n"
-                        + "The AdrenoTools Vulkan loader did not initialize.";
+                return "NATIVE LOAD RETURNED FALSE\n\n"
+                        + "Driver: " + stagedName + "\n"
+                        + "Version: " + stagedVersion + "\n"
+                        + "Library: " + stagedLibrary;
             }
 
             String report = nativeProbe();
 
-            return "CUSTOM DRIVER ACTIVE\n\n"
-                    + "Package: " + name + "\n"
-                    + "Version: " + version + "\n"
-                    + "Library: " + libraryName + "\n\n"
+            return "TURNIP LOAD PASSED\n\n"
+                    + "Driver: " + stagedName + "\n"
+                    + "Version: " + stagedVersion + "\n"
+                    + "Library: " + stagedLibrary + "\n\n"
                     + report;
 
         } catch (Throwable t) {
-            StringBuilder s = new StringBuilder();
-
-            s.append("PROBE FAILED\n\n");
-            s.append(t.toString()).append("\n");
-
-            for (StackTraceElement e : t.getStackTrace()) {
-                s.append("\n  at ").append(e.toString());
-            }
-
-            return s.toString();
+            return throwable("NATIVE PROBE FAILED", t);
         }
+    }
+
+    private static String throwable(String title, Throwable t) {
+        StringBuilder s = new StringBuilder();
+        s.append(title).append("\n\n");
+        s.append(t.toString());
+
+        for (StackTraceElement e : t.getStackTrace()) {
+            s.append("\n  at ").append(e);
+        }
+
+        return s.toString();
     }
 
     private static void unzip(InputStream raw, File dest) throws Exception {
@@ -109,10 +135,7 @@ public final class DriverBootstrap {
             while ((e = zin.getNextEntry()) != null) {
                 if (e.isDirectory()) continue;
 
-                // Driver packages sometimes put files inside folders.
-                // Flatten them because meta.json refers to the library basename.
                 String name = new File(e.getName()).getName();
-
                 if (name.isEmpty()) continue;
 
                 File outFile = new File(dest, name);
@@ -132,7 +155,6 @@ public final class DriverBootstrap {
     private static String readAll(File f) throws Exception {
         try (InputStream in = new FileInputStream(f)) {
             ByteArrayOutputStream out = new ByteArrayOutputStream();
-
             byte[] buf = new byte[8192];
             int n;
 
@@ -150,9 +172,7 @@ public final class DriverBootstrap {
         File[] kids = f.listFiles();
 
         if (kids != null) {
-            for (File k : kids) {
-                deleteDir(k);
-            }
+            for (File k : kids) deleteDir(k);
         }
 
         f.delete();

@@ -5,8 +5,6 @@ import android.content.Intent;
 import android.graphics.Typeface;
 import android.net.Uri;
 import android.os.Bundle;
-import android.view.Gravity;
-import android.view.View;
 import android.widget.Button;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
@@ -17,7 +15,8 @@ public class MainActivity extends Activity {
     private static final int PICK_DRIVER = 1001;
 
     private TextView output;
-    private Button button;
+    private Button pickButton;
+    private Button probeButton;
 
     @Override
     protected void onCreate(Bundle state) {
@@ -30,40 +29,34 @@ public class MainActivity extends Activity {
         root.setPadding(pad, pad, pad, pad);
 
         TextView title = new TextView(this);
-        title.setText("GTAV Turnip Capability Probe");
-        title.setTextSize(22);
+        title.setText("GTAV Turnip Capability Probe - Test 2");
+        title.setTextSize(21);
         title.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
 
-        TextView explanation = new TextView(this);
-        explanation.setText(
-                "\nSelect an unmodified Turnip driver ZIP.\n\n"
-              + "Start with:\n"
-              + "turnip_mrpurple_T28-toasted.adpkg.zip\n\n"
-              + "The driver will be copied into this app's private storage "
-              + "and loaded through AdrenoTools."
-        );
-        explanation.setTextSize(15);
+        pickButton = new Button(this);
+        pickButton.setText("1. SELECT TURNIP DRIVER");
+        pickButton.setOnClickListener(v -> chooseDriver());
 
-        button = new Button(this);
-        button.setText("SELECT TURNIP DRIVER");
-        button.setOnClickListener(v -> chooseDriver());
+        probeButton = new Button(this);
+        probeButton.setText("2. LOAD TURNIP + RUN PROBE");
+        probeButton.setEnabled(false);
+        probeButton.setOnClickListener(v -> runNativeProbe());
 
         output = new TextView(this);
-        output.setText(
-                "Waiting for driver.\n\n"
-              + "Important result:\n"
-              + "shaderInt64 = true or false"
-        );
-        output.setTextSize(13);
         output.setTypeface(Typeface.MONOSPACE);
+        output.setTextSize(13);
         output.setTextIsSelectable(true);
+        output.setText(
+                "Step 1 only unpacks and validates the driver.\n\n"
+              + "No Vulkan driver is loaded until Step 2."
+        );
 
         ScrollView scroll = new ScrollView(this);
         scroll.addView(output);
 
         root.addView(title);
-        root.addView(explanation);
-        root.addView(button);
+        root.addView(pickButton);
+        root.addView(probeButton);
 
         LinearLayout.LayoutParams scrollParams =
                 new LinearLayout.LayoutParams(
@@ -71,8 +64,6 @@ public class MainActivity extends Activity {
                         0,
                         1f
                 );
-
-        scrollParams.topMargin = dp(12);
 
         root.addView(scroll, scrollParams);
 
@@ -82,15 +73,7 @@ public class MainActivity extends Activity {
     private void chooseDriver() {
         Intent i = new Intent(Intent.ACTION_OPEN_DOCUMENT);
         i.addCategory(Intent.CATEGORY_OPENABLE);
-        i.setType("application/zip");
-
-        // Some Android file managers don't tag .adpkg.zip correctly.
-        i.putExtra(Intent.EXTRA_MIME_TYPES, new String[] {
-                "application/zip",
-                "application/octet-stream",
-                "*/*"
-        });
-
+        i.setType("*/*");
         startActivityForResult(i, PICK_DRIVER);
     }
 
@@ -107,17 +90,41 @@ public class MainActivity extends Activity {
 
         Uri uri = data.getData();
 
-        button.setEnabled(false);
-        button.setText("RUNNING PROBE...");
-        output.setText("Loading Turnip driver...\n");
+        pickButton.setEnabled(false);
+        output.setText("Staging driver...\n");
 
         new Thread(() -> {
-            String report = DriverBootstrap.runProbe(this, uri);
+            String report = DriverBootstrap.stageDriver(this, uri);
 
             runOnUiThread(() -> {
                 output.setText(report);
-                button.setEnabled(true);
-                button.setText("SELECT ANOTHER DRIVER");
+                pickButton.setEnabled(true);
+
+                if (report.startsWith("STAGE 1 PASSED")) {
+                    probeButton.setEnabled(true);
+                }
+            });
+        }).start();
+    }
+
+    private void runNativeProbe() {
+        probeButton.setEnabled(false);
+        pickButton.setEnabled(false);
+
+        output.append(
+                "\n\n================================\n"
+              + "ENTERING NATIVE TURNIP LOADER...\n"
+              + "If the app dies now, nativeInit is the crash point.\n"
+              + "================================\n"
+        );
+
+        new Thread(() -> {
+            String report = DriverBootstrap.runProbe(this);
+
+            runOnUiThread(() -> {
+                output.setText(report);
+                probeButton.setEnabled(true);
+                pickButton.setEnabled(true);
             });
         }).start();
     }
