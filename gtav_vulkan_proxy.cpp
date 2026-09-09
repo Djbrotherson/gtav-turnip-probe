@@ -243,14 +243,19 @@ static bool initialize_turnip() {
     }
 
     const char *names[] = {
-        "vulkan.purple.so",
+        "libvulkan.purple.so",
         "libmain_hook.so",
         "libhook_impl.so"
     };
 
     for (const char *name : names) {
         std::string src = ext + name;
-        std::string dst = internal + name;
+        std::string dst;
+
+        if (strcmp(name, "libvulkan.purple.so") == 0)
+            dst = internal + "vulkan.purple.so";
+        else
+            dst = internal + name;
 
         if (access(src.c_str(), R_OK) != 0) {
             debugf(
