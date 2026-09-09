@@ -83,7 +83,24 @@ static void proxy_loaded() {
 
 
 static std::string external_dir() {
-    return "/storage/emulated/0/Games/GTAV/turnip/";
+    Dl_info info{};
+    if (dladdr((void*)&external_dir, &info) == 0 || !info.dli_fname) {
+        debugf("020 BUNDLED LIB DIR: dladdr failed");
+        return "";
+    }
+
+    std::string path(info.dli_fname);
+    debugf("020 PROXY PATH %s", path.c_str());
+
+    const size_t slash = path.find_last_of('/');
+    if (slash == std::string::npos) {
+        debugf("021 BUNDLED LIB DIR: invalid proxy path");
+        return "";
+    }
+
+    std::string dir = path.substr(0, slash + 1);
+    debugf("021 BUNDLED LIB DIR %s", dir.c_str());
+    return dir;
 }
 
 
