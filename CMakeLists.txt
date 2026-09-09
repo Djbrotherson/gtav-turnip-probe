@@ -40,3 +40,11 @@ target_link_libraries(probeonly
         log
         android
         dl)
+
+add_library(directload SHARED
+        directload.cpp)
+
+target_link_libraries(directload
+        log
+        android
+        dl)
