@@ -26,3 +26,17 @@ target_link_libraries(driverhook
 
 # 16 KiB ELF max-page-size compatibility for newer Android devices.
 target_link_options(driverhook PRIVATE "-Wl,-z,max-page-size=16384")
+
+# -----------------------------------------------------------------
+# Standalone capability probe.
+# Deliberately does NOT link ByteHook.
+# -----------------------------------------------------------------
+add_library(probeonly SHARED
+        probeonly_init.cpp
+        probeonly_probe.cpp)
+
+target_link_libraries(probeonly
+        adrenotools
+        log
+        android
+        dl)
