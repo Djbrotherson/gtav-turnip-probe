@@ -87,7 +87,29 @@ jobs:
           rm -rf app/src/main/jniLibs/arm64-v8a
           mkdir -p app/src/main/jniLibs/arm64-v8a
           cp dist/libdirectload.so app/src/main/jniLibs/arm64-v8a/
+
+          # Recreate the real T28 driver after jniLibs was cleaned above.
+          rm -rf /tmp/gtav-t28
+          mkdir -p /tmp/gtav-t28
+          unzip -q app/src/main/assets/driver.zip -d /tmp/gtav-t28
+
+          DRIVER_LIB=$(python3 - <<'PYMETA'
+import json
+with open("/tmp/gtav-t28/meta.json", "r") as f:
+    print(json.load(f)["libraryName"])
+PYMETA
+          )
+
+          echo "T28 library from meta.json: $DRIVER_LIB"
+
+          test -f "/tmp/gtav-t28/$DRIVER_LIB"
+
+          cp "/tmp/gtav-t28/$DRIVER_LIB" \
+             app/src/main/jniLibs/arm64-v8a/libturnip.so
+
           test -f app/src/main/jniLibs/arm64-v8a/libturnip.so
+
+          file app/src/main/jniLibs/arm64-v8a/libturnip.so
           cp dist/libprobeonly.so app/src/main/jniLibs/arm64-v8a/
           cp dist/libmain_hook.so app/src/main/jniLibs/arm64-v8a/
           cp dist/libhook_impl.so app/src/main/jniLibs/arm64-v8a/
