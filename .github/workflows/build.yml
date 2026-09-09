@@ -62,7 +62,7 @@ jobs:
         run: |
           set -euxo pipefail
           mkdir -p dist
-          for lib in libdriverhook.so libprobeonly.so libdirectload.so libmain_hook.so libhook_impl.so libbytehook.so; do
+          for lib in libdriverhook.so libprobeonly.so libdirectload.so libturnip.so libmain_hook.so libhook_impl.so libbytehook.so; do
             p="$(find build -type f -name "$lib" -print -quit)"
             test -n "$p"
             cp -v "$p" "dist/$lib"

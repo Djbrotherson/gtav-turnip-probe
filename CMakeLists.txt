@@ -48,3 +48,20 @@ target_link_libraries(directload
         log
         android
         dl)
+
+# -----------------------------------------------------------------
+# GTA-specific Vulkan loader proxy.
+# DXVK dlopens this as libturnip.so.
+# -----------------------------------------------------------------
+
+add_library(gtavturnip SHARED
+        gtav_vulkan_proxy.cpp)
+
+set_target_properties(gtavturnip PROPERTIES
+        OUTPUT_NAME turnip)
+
+target_link_libraries(gtavturnip
+        adrenotools
+        log
+        android
+        dl)
