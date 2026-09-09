@@ -93,12 +93,7 @@ jobs:
           mkdir -p /tmp/gtav-t28
           unzip -q app/src/main/assets/driver.zip -d /tmp/gtav-t28
 
-          DRIVER_LIB=$(python3 - <<'PYMETA'
-import json
-with open("/tmp/gtav-t28/meta.json", "r") as f:
-    print(json.load(f)["libraryName"])
-PYMETA
-          )
+          DRIVER_LIB=$(python3 -c 'import json; print(json.load(open("/tmp/gtav-t28/meta.json"))["libraryName"])')
 
           echo "T28 library from meta.json: $DRIVER_LIB"
 
